@@ -9,6 +9,7 @@ import Charts from './components/Charts';
 import TradingPanel from './components/TradingPanel';
 import SettingsPanel from './components/SettingsPanel';
 import EngineStatus from './components/EngineStatus';
+import WorkerMonitoring from './components/WorkerMonitoring';
 
 function AppContent() {
   const { colors } = useTheme();
@@ -26,6 +27,7 @@ function AppContent() {
         {activeTab === 'dashboard' && (
           <div className="space-y-4">
             <EngineStatus />
+            <WorkerMonitoring />
             <Charts />
           </div>
         )}
@@ -47,10 +49,10 @@ function AppContent() {
       <footer className={`${colors.bgSecondary} border-t ${colors.border} mt-8`}>
         <div className="max-w-[1920px] mx-auto px-3 py-3 flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className={`text-[10px] ${colors.textMuted}`}>
-            Crypto Trading Simulator Pro v2.0 • Paper Trading Engine • No Real Money
+            Crypto Trading Simulator Pro v3.0 • Scheduled Workers Active • No Real Money
           </p>
           <p className={`text-[10px] ${colors.textMuted}`}>
-            Created by Taseen Billah • Not Financial Advice • Phase 2
+            Created by Taseen Billah • Phase 3 • Not Financial Advice
           </p>
         </div>
       </footer>

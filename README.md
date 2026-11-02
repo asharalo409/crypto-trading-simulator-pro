@@ -1,10 +1,23 @@
-# Crypto Trading Simulator Pro - Phase 2
+# Crypto Trading Simulator Pro
 
-## 📊 Phase 2 Complete: Paper Trading Engine
+## 📊 Phase 3 Complete: Scheduled Paper Trading Worker
 
 **Status:** ✅ Complete  
-**Version:** 2.0.0  
+**Version:** 3.0.0  
 **Owner:** Taseen Billah
+
+---
+
+## 🎯 Project Overview
+
+Advanced AI-Assisted Automated Crypto Paper Trading Platform with:
+- Automated Paper Trading Engine
+- DCA / Averaging Down Strategy
+- No-Loss Hold Mode
+- Scheduled Workers (24/7 automation)
+- Market Radar with Technical Analysis
+- Multi-theme Dashboard
+- Bengali + English Language Support
 
 ---
 

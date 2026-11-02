@@ -1,0 +1,16 @@
+name = "crypto-trading-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Cron trigger - runs every 1 minute
+[triggers]
+crons = ["*/1 * * * *"]
+
+# Environment variables (set these in Cloudflare dashboard)
+[vars]
+WORKER_NAME = "cloudflare_backup"
+
+# Note: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY 
+# must be set as secrets in Cloudflare dashboard:
+# wrangler secret put SUPABASE_URL
+# wrangler secret put SUPABASE_SERVICE_ROLE_KEY

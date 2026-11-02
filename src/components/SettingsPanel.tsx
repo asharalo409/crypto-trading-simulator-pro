@@ -5,8 +5,10 @@ import { useTrading } from '../contexts/TradingContext';
 import { Theme, Language } from '../types';
 import {
   Settings, Palette, Globe, Sliders, DollarSign,
-  Percent, Hash, Save, Check, Info
+  Percent, Hash, Save, Check, Info, Send, Shield
 } from 'lucide-react';
+import TelegramSettings from './TelegramSettings';
+import AuditLogViewer from './AuditLogViewer';
 
 export default function SettingsPanel() {
   const { theme, setTheme, colors } = useTheme();
@@ -193,7 +195,7 @@ export default function SettingsPanel() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
           <div className={`p-2 rounded-lg ${colors.bgSecondary}`}>
             <p className={colors.textMuted}>Version</p>
-            <p className={`${colors.text} font-mono`}>1.0.0</p>
+            <p className={`${colors.text} font-mono`}>4.0.0</p>
           </div>
           <div className={`p-2 rounded-lg ${colors.bgSecondary}`}>
             <p className={colors.textMuted}>Engine</p>
@@ -219,6 +221,12 @@ export default function SettingsPanel() {
           </div>
         </div>
       </div>
+
+      {/* Telegram Notifications */}
+      <TelegramSettings />
+
+      {/* Audit Log */}
+      <AuditLogViewer />
     </div>
   );
 }

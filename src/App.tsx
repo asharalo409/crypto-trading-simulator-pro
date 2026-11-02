@@ -10,6 +10,8 @@ import TradingPanel from './components/TradingPanel';
 import SettingsPanel from './components/SettingsPanel';
 import EngineStatus from './components/EngineStatus';
 import WorkerMonitoring from './components/WorkerMonitoring';
+import TelegramSettings from './components/TelegramSettings';
+import AuditLogViewer from './components/AuditLogViewer';
 
 function AppContent() {
   const { colors } = useTheme();

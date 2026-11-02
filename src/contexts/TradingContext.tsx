@@ -5,6 +5,7 @@ import {
 } from '../types';
 import { TradingEngine } from '../engine/TradingEngine';
 import { SUPPORTED_COINS, BASE_PRICES } from '../data/coins';
+import { marketDataService } from '../services/BinanceAPI';
 
 interface TradingContextType {
   wallet: WalletState;
@@ -23,11 +24,6 @@ interface TradingContextType {
   resetEngine: () => void;
   manualBuy: (coin: string, amount: number) => { success: boolean; message: string };
   manualSell: (coin: string) => { success: boolean; message: string };
-}
-
-function generatePrice(base: number, volatility: number = 0.015): number {
-  const change = (Math.random() - 0.48) * volatility;
-  return Number((base * (1 + change)).toFixed(8));
 }
 
 const TradingContext = createContext<TradingContextType | undefined>(undefined);
@@ -114,76 +110,152 @@ export function TradingProvider({ children }: { children: ReactNode }) {
 
   // Price update and tick processing
   useEffect(() => {
-    const interval = setInterval(() => {
+    const updatePrices = async () => {
       if (!engineRef.current) return;
 
-      const newPrices: Record<string, number> = {};
-      SUPPORTED_COINS.forEach(coin => {
-        newPrices[coin.symbol] = generatePrice(BASE_PRICES[coin.symbol]);
-      });
-      setPrices(newPrices);
-
-      // Process tick
-      const result = engineRef.current.processTick(newPrices);
-      
-      if (result.tradesExecuted.length > 0) {
-        result.tradesExecuted.forEach(trade => {
-          addLog(`${trade.side} ${trade.coin} @ $${trade.price.toFixed(4)} | Qty: ${trade.quantity.toFixed(6)} | P/L: $${trade.pnl.toFixed(2)}`);
-        });
-      }
-
-      if (result.errors.length > 0) {
-        result.errors.forEach(err => addLog(`⚠️ ${err}`));
-      }
-
-      // Generate signals for UI
-      const newSignals: MarketSignal[] = SUPPORTED_COINS.map(coin => {
-        const price = newPrices[coin.symbol] || BASE_PRICES[coin.symbol];
-        const priceChange = ((price - BASE_PRICES[coin.symbol]) / BASE_PRICES[coin.symbol]) * 100;
-        const signal = result.signals[coin.symbol] || 'WAIT';
-        const history = (engineRef.current as any).priceHistory?.[coin.symbol] || [price];
-        
-        // Calculate indicators
-        const rsi = history.length >= 15 
-          ? Number((Math.random() * 40 + 30).toFixed(1))
-          : 50;
-        const ema20 = Number((price * (1 + (Math.random() - 0.5) * 0.01)).toFixed(6));
-        const ema50 = Number((price * (1 + (Math.random() - 0.5) * 0.02)).toFixed(6));
-        const macd = Number(((Math.random() - 0.5) * price * 0.005).toFixed(6));
-
-        const position = positions.find(p => p.coin === coin.symbol);
-        
-        return {
-          coin: coin.symbol,
-          signal,
-          rsi,
-          ema20,
-          ema50,
-          macd,
-          volume: Number((Math.random() * 100000000).toFixed(0)),
-          trend: priceChange > 1 ? 'UP' : priceChange < -1 ? 'DOWN' : 'SIDEWAYS',
-          priceChange24h: Number(priceChange.toFixed(2)),
-          currentPrice: price,
-          oversold: rsi < 30,
-          nextDcaPrice: position 
-            ? Number((position.dcaOrders[position.dcaOrders.length - 1]?.price * 0.97 || price * 0.97).toFixed(6))
-            : Number((price * 0.97).toFixed(6)),
-          avgEntryPrice: position?.avgEntryPrice,
-          profitTargetPrice: position?.profitTargetPrice,
-        };
-      });
-      setSignals(newSignals);
-
-      // Sync state
-      syncState();
-
-      // Persist engine state
       try {
-        localStorage.setItem('ctsp-engine', engineRef.current.serialize());
-      } catch (e) {
-        // Storage full or unavailable
+        // Fetch real prices from Binance API with fallback
+        const newPrices = await marketDataService.getAllPrices();
+        
+        // Fill in any missing prices with base prices
+        SUPPORTED_COINS.forEach(coin => {
+          if (!newPrices[coin.symbol]) {
+            newPrices[coin.symbol] = BASE_PRICES[coin.symbol];
+          }
+        });
+        
+        setPrices(newPrices);
+
+        // Process tick with real prices
+        const result = engineRef.current.processTick(newPrices);
+        
+        if (result.tradesExecuted.length > 0) {
+          result.tradesExecuted.forEach(trade => {
+            addLog(`${trade.side} ${trade.coin} @ $${trade.price.toFixed(4)} | Qty: ${trade.quantity.toFixed(6)} | P/L: $${trade.pnl.toFixed(2)}`);
+          });
+        }
+
+        if (result.errors.length > 0) {
+          result.errors.forEach(err => addLog(`⚠️ ${err}`));
+        }
+
+        // Generate signals for UI using real candle data
+        const newSignals: MarketSignal[] = await Promise.all(
+          SUPPORTED_COINS.map(async (coin) => {
+            const price = newPrices[coin.symbol] || BASE_PRICES[coin.symbol];
+            const signal = result.signals[coin.symbol] || 'WAIT';
+            
+            // Fetch real candle data for technical analysis
+            let rsi = 50;
+            let ema20 = price;
+            let ema50 = price;
+            let macd = 0;
+            let volume = 0;
+            let priceChange24h = 0;
+            
+            try {
+              const candles = await marketDataService.getKlines(coin.symbol, '1h', 100);
+              if (candles.length > 0) {
+                const closes = candles.map(c => c.close);
+                
+                // Calculate RSI from real data
+                if (closes.length >= 15) {
+                  const gains: number[] = [];
+                  const losses: number[] = [];
+                  for (let i = 1; i < closes.length; i++) {
+                    const change = closes[i] - closes[i - 1];
+                    if (change > 0) gains.push(change);
+                    else losses.push(Math.abs(change));
+                  }
+                  const avgGain = gains.slice(-14).reduce((a, b) => a + b, 0) / 14;
+                  const avgLoss = losses.slice(-14).reduce((a, b) => a + b, 0) / 14;
+                  if (avgLoss > 0) {
+                    const rs = avgGain / avgLoss;
+                    rsi = 100 - (100 / (1 + rs));
+                  }
+                }
+                
+                // Calculate EMA from real data
+                if (closes.length >= 20) {
+                  const multiplier = 2 / (20 + 1);
+                  ema20 = closes.slice(0, 20).reduce((a, b) => a + b, 0) / 20;
+                  for (let i = 20; i < closes.length; i++) {
+                    ema20 = (closes[i] - ema20) * multiplier + ema20;
+                  }
+                }
+                
+                if (closes.length >= 50) {
+                  const multiplier = 2 / (50 + 1);
+                  ema50 = closes.slice(0, 50).reduce((a, b) => a + b, 0) / 50;
+                  for (let i = 50; i < closes.length; i++) {
+                    ema50 = (closes[i] - ema50) * multiplier + ema50;
+                  }
+                }
+                
+                // Calculate MACD from real data
+                if (closes.length >= 26) {
+                  const ema12 = closes.slice(-12).reduce((a, b) => a + b, 0) / 12;
+                  const ema26Val = closes.slice(-26).reduce((a, b) => a + b, 0) / 26;
+                  macd = ema12 - ema26Val;
+                }
+                
+                // Get volume from latest candle
+                volume = candles[candles.length - 1].volume;
+                
+                // Calculate 24h price change
+                if (closes.length >= 24) {
+                  const price24hAgo = closes[closes.length - 24];
+                  priceChange24h = ((price - price24hAgo) / price24hAgo) * 100;
+                }
+              }
+            } catch (error) {
+              console.warn(`Failed to fetch candles for ${coin.symbol}:`, error);
+            }
+
+            const position = positions.find(p => p.coin === coin.symbol);
+            
+            return {
+              coin: coin.symbol,
+              signal,
+              rsi: Number(rsi.toFixed(1)),
+              ema20: Number(ema20.toFixed(6)),
+              ema50: Number(ema50.toFixed(6)),
+              macd: Number(macd.toFixed(6)),
+              volume: Number(volume.toFixed(0)),
+              trend: priceChange24h > 1 ? 'UP' : priceChange24h < -1 ? 'DOWN' : 'SIDEWAYS',
+              priceChange24h: Number(priceChange24h.toFixed(2)),
+              currentPrice: price,
+              oversold: rsi < 30,
+              nextDcaPrice: position 
+                ? Number((position.dcaOrders[position.dcaOrders.length - 1]?.price * 0.97 || price * 0.97).toFixed(6))
+                : Number((price * 0.97).toFixed(6)),
+              avgEntryPrice: position?.avgEntryPrice,
+              profitTargetPrice: position?.profitTargetPrice,
+            };
+          })
+        );
+        setSignals(newSignals);
+
+        // Sync state
+        syncState();
+
+        // Persist engine state
+        try {
+          localStorage.setItem('ctsp-engine', engineRef.current.serialize());
+        } catch (e) {
+          // Storage full or unavailable
+        }
+      } catch (error) {
+        console.error('Failed to update prices:', error);
+        addLog(`❌ Price update failed: ${error}`);
       }
-    }, 5000);
+    };
+
+    // Initial update
+    updatePrices();
+
+    // Update every 5 seconds
+    const interval = setInterval(updatePrices, 5000);
 
     return () => clearInterval(interval);
   }, [syncState, addLog, positions]);

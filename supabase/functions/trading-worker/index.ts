@@ -231,7 +231,7 @@ async function processUser(
   userId: string,
   prices: Record<string, number>
 ): Promise<{ tradesExecuted: number; errors: string[] }> {
-  const tradesExecuted: number = 0
+  let tradesExecuted: number = 0
   const errors: string[] = []
   
   try {
@@ -435,7 +435,7 @@ async function processUser(
         } else {
           // No position - check for new entry
           if (signal === 'BUY' && wallet.available_balance >= config.initial_buy) {
-            const fee = config.initial_buy * (config.tradingFee_percent / 100)
+            const fee = config.initial_buy * (config.trading_fee_percent / 100)
             const slippagePrice = currentPrice * (1 + config.slippage_percent / 100)
             const quantity = config.initial_buy / slippagePrice
             const profitTarget = slippagePrice * (1 + (config.profit_target_percent + config.trading_fee_percent * 2 + config.slippage_percent * 2) / 100)

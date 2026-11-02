@@ -10,8 +10,8 @@ import TradingPanel from './components/TradingPanel';
 import SettingsPanel from './components/SettingsPanel';
 import EngineStatus from './components/EngineStatus';
 import WorkerMonitoring from './components/WorkerMonitoring';
-import TelegramSettings from './components/TelegramSettings';
-import AuditLogViewer from './components/AuditLogViewer';
+import BacktestingPanel from './components/BacktestingPanel';
+import AdvancedAnalytics from './components/AdvancedAnalytics';
 
 function AppContent() {
   const { colors } = useTheme();
@@ -42,6 +42,14 @@ function AppContent() {
           <TradingPanel />
         )}
 
+        {activeTab === 'analytics' && (
+          <AdvancedAnalytics />
+        )}
+
+        {activeTab === 'backtest' && (
+          <BacktestingPanel />
+        )}
+
         {activeTab === 'settings' && (
           <SettingsPanel />
         )}
@@ -51,10 +59,10 @@ function AppContent() {
       <footer className={`${colors.bgSecondary} border-t ${colors.border} mt-8`}>
         <div className="max-w-[1920px] mx-auto px-3 py-3 flex flex-col sm:flex-row items-center justify-between gap-2">
           <p className={`text-[10px] ${colors.textMuted}`}>
-            Crypto Trading Simulator Pro v3.0 • Scheduled Workers Active • No Real Money
+            Crypto Trading Simulator Pro v5.0 • Advanced Analytics & Backtesting • No Real Money
           </p>
           <p className={`text-[10px] ${colors.textMuted}`}>
-            Created by Taseen Billah • Phase 3 • Not Financial Advice
+            Created by Taseen Billah • Phase 5 • Not Financial Advice
           </p>
         </div>
       </footer>

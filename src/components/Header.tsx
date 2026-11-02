@@ -5,7 +5,7 @@ import { useTrading } from '../contexts/TradingContext';
 import { Theme, Language } from '../types';
 import {
   Activity, BarChart3, Settings, Globe, Palette,
-  Play, Square, Menu, X, Zap
+  Play, Square, Menu, X, Zap, LineChart, FlaskConical
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -32,6 +32,8 @@ export default function Header({ activeTab, setActiveTab }: HeaderProps) {
     { id: 'dashboard', label: t('dashboard'), icon: BarChart3 },
     { id: 'radar', label: t('marketRadar'), icon: Activity },
     { id: 'trading', label: t('trading'), icon: Zap },
+    { id: 'analytics', label: 'Analytics', icon: LineChart },
+    { id: 'backtest', label: 'Backtest', icon: FlaskConical },
     { id: 'settings', label: t('settings'), icon: Settings },
   ];
 

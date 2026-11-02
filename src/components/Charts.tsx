@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { useTrading, generateCandleData, generateEquityCurve } from '../contexts/TradingContext';
+import { useTrading } from '../contexts/TradingContext';
+import { generateCandleData, generateEquityCurve } from '../contexts/chartHelpers';
 import { SUPPORTED_COINS, BASE_PRICES } from '../data/coins';
 import { createChart, IChartApi, CandlestickSeries, AreaSeries, HistogramSeries } from 'lightweight-charts';
 import {
@@ -83,7 +84,7 @@ export default function Charts() {
   const equityData = generateEquityCurve();
 
   // Daily P/L data
-  const dailyPnlData = equityData.map((d, i) => ({
+  const dailyPnlData = equityData.map((d: { date: string; balance: number; pnl: number }, i: number) => ({
     date: d.date,
     pnl: i > 0 ? d.balance - equityData[i - 1].balance : 0,
   }));

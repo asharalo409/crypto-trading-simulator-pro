@@ -24,6 +24,9 @@ export interface Position {
   avgEntryPrice: number;
   profitTargetPrice: number;
   status: 'open' | 'closed';
+  openedAt: number;
+  closedAt?: number;
+  realizedPnl?: number;
 }
 
 export interface DCAOrder {
@@ -47,6 +50,8 @@ export interface Trade {
   pnl: number;
   timestamp: number;
   isDCA: boolean;
+  positionId: string;
+  dcaOrderNumber?: number;
 }
 
 export interface MarketSignal {
@@ -95,10 +100,33 @@ export interface BotConfig {
   noLossSell: boolean;
   tradingMode: TradingMode;
   dcaSettings: DCASettings;
+  maxInvestmentPerCoin: number;
+  stopLossPercent: number;
+  takeProfitPercent: number;
 }
 
 export interface PortfolioSnapshot {
   timestamp: number;
   totalBalance: number;
   pnl: number;
+}
+
+export interface EngineState {
+  lastProcessedCandle: number;
+  processedCandles: string[];
+  errors: EngineError[];
+}
+
+export interface EngineError {
+  id: string;
+  timestamp: number;
+  message: string;
+  coin?: string;
+  severity: 'low' | 'medium' | 'high';
+}
+
+export interface TradeResult {
+  success: boolean;
+  trade?: Trade;
+  error?: string;
 }

@@ -1,187 +1,75 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import {
   WalletState, BotConfig, Position, Trade, MarketSignal,
   PortfolioSnapshot, DCASettings, SignalType, TradingMode
 } from '../types';
+import { TradingEngine } from '../engine/TradingEngine';
 import { SUPPORTED_COINS, BASE_PRICES } from '../data/coins';
 
 interface TradingContextType {
   wallet: WalletState;
   botConfig: BotConfig;
   positions: Position[];
+  closedPositions: Position[];
   trades: Trade[];
   signals: MarketSignal[];
   snapshots: PortfolioSnapshot[];
   prices: Record<string, number>;
+  engineLogs: string[];
   toggleBot: () => void;
   toggleNoLoss: () => void;
   setTradingMode: (mode: TradingMode) => void;
   updateDCASettings: (settings: Partial<DCASettings>) => void;
+  resetEngine: () => void;
+  manualBuy: (coin: string, amount: number) => { success: boolean; message: string };
+  manualSell: (coin: string) => { success: boolean; message: string };
 }
 
-const defaultDCA: DCASettings = {
-  initialBuy: 10,
-  additionalBuy: 10,
-  dcaTriggerPercent: 3,
-  maxBuyOrders: 4,
-  profitTargetPercent: 1.5,
-  tradingFeePercent: 0.1,
-  slippagePercent: 0.05,
-};
-
-const defaultWallet: WalletState = {
-  totalBalance: 10000,
-  availableBalance: 9750,
-  investedBalance: 250,
-  totalPnl: 47.82,
-  unrealizedPnl: 12.35,
-  realizedPnl: 35.47,
-  todayPnl: 8.23,
-  totalTrades: 28,
-  winRate: 71.4,
-  buyCount: 18,
-  sellCount: 10,
-};
-
-const defaultBotConfig: BotConfig = {
-  isRunning: true,
-  noLossSell: true,
-  tradingMode: 'dca',
-  dcaSettings: defaultDCA,
-};
-
-function generatePrice(base: number, volatility: number = 0.02): number {
+function generatePrice(base: number, volatility: number = 0.015): number {
   const change = (Math.random() - 0.48) * volatility;
-  return base * (1 + change);
-}
-
-function generateRSI(): number {
-  return Math.random() * 100;
-}
-
-function generateSignal(rsi: number, priceChange: number): SignalType {
-  if (rsi < 30 && priceChange < -2) return 'BUY';
-  if (rsi > 70 && priceChange > 2) return 'SELL';
-  if (rsi < 35) return 'DCA';
-  if (Math.abs(priceChange) < 0.5) return 'HOLD';
-  return 'WAIT';
-}
-
-function generateCandleData(basePrice: number, count: number = 100) {
-  const data = [];
-  let price = basePrice * 0.92;
-  const now = Date.now();
-  
-  for (let i = count; i >= 0; i--) {
-    const open = price;
-    const volatility = basePrice * 0.015;
-    const close = open + (Math.random() - 0.48) * volatility;
-    const high = Math.max(open, close) + Math.random() * volatility * 0.5;
-    const low = Math.min(open, close) - Math.random() * volatility * 0.5;
-    
-    data.push({
-      time: Math.floor((now - i * 3600000) / 1000) as any,
-      open: Number(open.toFixed(2)),
-      high: Number(high.toFixed(2)),
-      low: Number(low.toFixed(2)),
-      close: Number(close.toFixed(2)),
-    });
-    
-    price = close;
-  }
-  return data;
-}
-
-function generateEquityCurve() {
-  const data = [];
-  let balance = 10000;
-  const now = Date.now();
-  
-  for (let i = 30; i >= 0; i--) {
-    const change = (Math.random() - 0.4) * 50;
-    balance += change;
-    data.push({
-      date: new Date(now - i * 86400000).toLocaleDateString(),
-      balance: Number(balance.toFixed(2)),
-      pnl: Number((balance - 10000).toFixed(2)),
-    });
-  }
-  return data;
+  return Number((base * (1 + change)).toFixed(8));
 }
 
 const TradingContext = createContext<TradingContextType | undefined>(undefined);
 
 export function TradingProvider({ children }: { children: ReactNode }) {
-  const [wallet, setWallet] = useState<WalletState>(defaultWallet);
-  const [botConfig, setBotConfig] = useState<BotConfig>(defaultBotConfig);
-  const [prices, setPrices] = useState<Record<string, number>>({});
+  const engineRef = useRef<TradingEngine | null>(null);
+  const [wallet, setWallet] = useState<WalletState>({
+    totalBalance: 10000,
+    availableBalance: 10000,
+    investedBalance: 0,
+    totalPnl: 0,
+    unrealizedPnl: 0,
+    realizedPnl: 0,
+    todayPnl: 0,
+    totalTrades: 0,
+    winRate: 0,
+    buyCount: 0,
+    sellCount: 0,
+  });
+  const [botConfig, setBotConfig] = useState<BotConfig>({
+    isRunning: true,
+    noLossSell: true,
+    tradingMode: 'dca',
+    dcaSettings: {
+      initialBuy: 10,
+      additionalBuy: 10,
+      dcaTriggerPercent: 3,
+      maxBuyOrders: 4,
+      profitTargetPercent: 1.5,
+      tradingFeePercent: 0.1,
+      slippagePercent: 0.05,
+    },
+    maxInvestmentPerCoin: 1000,
+    stopLossPercent: 5,
+    takeProfitPercent: 3,
+  });
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [closedPositions, setClosedPositions] = useState<Position[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
   const [signals, setSignals] = useState<MarketSignal[]>([]);
-  const [positions] = useState<Position[]>([
-    {
-      id: '1',
-      coin: 'AVAX',
-      side: 'LONG',
-      entryPrice: 36.80,
-      quantity: 0.543,
-      totalCost: 20,
-      currentPrice: 38.5,
-      unrealizedPnl: 0.92,
-      unrealizedPnlPercent: 4.6,
-      dcaOrders: [
-        { id: 'd1', orderNumber: 1, price: 37.20, quantity: 0.269, cost: 10, fee: 0.01, timestamp: Date.now() - 86400000 },
-        { id: 'd2', orderNumber: 2, price: 36.08, quantity: 0.277, cost: 10, fee: 0.01, timestamp: Date.now() - 43200000 },
-      ],
-      avgEntryPrice: 36.64,
-      profitTargetPrice: 37.27,
-      status: 'open',
-    },
-    {
-      id: '2',
-      coin: 'SOL',
-      side: 'LONG',
-      entryPrice: 172.50,
-      quantity: 0.116,
-      totalCost: 20,
-      currentPrice: 178,
-      unrealizedPnl: 0.64,
-      unrealizedPnlPercent: 3.19,
-      dcaOrders: [
-        { id: 'd3', orderNumber: 1, price: 174.00, quantity: 0.057, cost: 10, fee: 0.01, timestamp: Date.now() - 172800000 },
-        { id: 'd4', orderNumber: 2, price: 171.00, quantity: 0.059, cost: 10, fee: 0.01, timestamp: Date.now() - 86400000 },
-      ],
-      avgEntryPrice: 172.50,
-      profitTargetPrice: 175.09,
-      status: 'open',
-    },
-    {
-      id: '3',
-      coin: 'ETH',
-      side: 'LONG',
-      entryPrice: 3880,
-      quantity: 0.0129,
-      totalCost: 50,
-      currentPrice: 3920,
-      unrealizedPnl: 0.52,
-      unrealizedPnlPercent: 1.03,
-      dcaOrders: [
-        { id: 'd5', orderNumber: 1, price: 3900, quantity: 0.0064, cost: 25, fee: 0.025, timestamp: Date.now() - 259200000 },
-        { id: 'd6', orderNumber: 2, price: 3860, quantity: 0.0065, cost: 25, fee: 0.025, timestamp: Date.now() - 172800000 },
-      ],
-      avgEntryPrice: 3880,
-      profitTargetPrice: 3919.36,
-      status: 'open',
-    },
-  ]);
-  const [trades] = useState<Trade[]>([
-    { id: 't1', coin: 'AVAX', side: 'BUY', price: 37.20, quantity: 0.269, total: 10, fee: 0.01, pnl: 0, timestamp: Date.now() - 86400000, isDCA: false },
-    { id: 't2', coin: 'AVAX', side: 'BUY', price: 36.08, quantity: 0.277, total: 10, fee: 0.01, pnl: 0, timestamp: Date.now() - 43200000, isDCA: true },
-    { id: 't3', coin: 'SOL', side: 'BUY', price: 174.00, quantity: 0.057, total: 10, fee: 0.01, pnl: 0, timestamp: Date.now() - 172800000, isDCA: false },
-    { id: 't4', coin: 'SOL', side: 'BUY', price: 171.00, quantity: 0.059, total: 10, fee: 0.01, pnl: 0, timestamp: Date.now() - 86400000, isDCA: true },
-    { id: 't5', coin: 'DOGE', side: 'SELL', price: 0.235, quantity: 4255, total: 10, fee: 0.01, pnl: 0.82, timestamp: Date.now() - 259200000, isDCA: false },
-    { id: 't6', coin: 'XRP', side: 'SELL', price: 2.52, quantity: 396, total: 10, fee: 0.01, pnl: 1.23, timestamp: Date.now() - 345600000, isDCA: false },
-    { id: 't7', coin: 'LINK', side: 'SELL', price: 19.20, quantity: 5.2, total: 10, fee: 0.01, pnl: 0.55, timestamp: Date.now() - 432000000, isDCA: false },
-    { id: 't8', coin: 'BTC', side: 'SELL', price: 105200, quantity: 0.00095, total: 10, fee: 0.01, pnl: 0.42, timestamp: Date.now() - 518400000, isDCA: false },
-  ]);
+  const [prices, setPrices] = useState<Record<string, number>>({});
+  const [engineLogs, setEngineLogs] = useState<string[]>([]);
   const [snapshots] = useState<PortfolioSnapshot[]>(() => {
     const data: PortfolioSnapshot[] = [];
     let balance = 10000;
@@ -192,71 +80,178 @@ export function TradingProvider({ children }: { children: ReactNode }) {
     return data;
   });
 
-  // Update prices periodically
+  // Initialize engine
   useEffect(() => {
-    const updatePrices = () => {
+    const saved = localStorage.getItem('ctsp-engine');
+    if (saved) {
+      try {
+        engineRef.current = TradingEngine.deserialize(saved);
+      } catch {
+        engineRef.current = new TradingEngine(10000);
+      }
+    } else {
+      engineRef.current = new TradingEngine(10000);
+    }
+    syncState();
+  }, []);
+
+  const syncState = useCallback(() => {
+    if (!engineRef.current) return;
+    
+    setWallet(engineRef.current.getWalletState());
+    setBotConfig(engineRef.current.getConfig());
+    setPositions(engineRef.current.getOpenPositions());
+    setClosedPositions(engineRef.current.getClosedPositions());
+    setTrades(engineRef.current.getTrades());
+  }, []);
+
+  const addLog = useCallback((message: string) => {
+    setEngineLogs(prev => {
+      const newLogs = [`[${new Date().toLocaleTimeString()}] ${message}`, ...prev];
+      return newLogs.slice(0, 50);
+    });
+  }, []);
+
+  // Price update and tick processing
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!engineRef.current) return;
+
       const newPrices: Record<string, number> = {};
       SUPPORTED_COINS.forEach(coin => {
-        const base = BASE_PRICES[coin.symbol];
-        newPrices[coin.symbol] = generatePrice(base);
+        newPrices[coin.symbol] = generatePrice(BASE_PRICES[coin.symbol]);
       });
       setPrices(newPrices);
 
-      // Generate signals
+      // Process tick
+      const result = engineRef.current.processTick(newPrices);
+      
+      if (result.tradesExecuted.length > 0) {
+        result.tradesExecuted.forEach(trade => {
+          addLog(`${trade.side} ${trade.coin} @ $${trade.price.toFixed(4)} | Qty: ${trade.quantity.toFixed(6)} | P/L: $${trade.pnl.toFixed(2)}`);
+        });
+      }
+
+      if (result.errors.length > 0) {
+        result.errors.forEach(err => addLog(`⚠️ ${err}`));
+      }
+
+      // Generate signals for UI
       const newSignals: MarketSignal[] = SUPPORTED_COINS.map(coin => {
         const price = newPrices[coin.symbol] || BASE_PRICES[coin.symbol];
         const priceChange = ((price - BASE_PRICES[coin.symbol]) / BASE_PRICES[coin.symbol]) * 100;
-        const rsi = generateRSI();
-        const signal = generateSignal(rsi, priceChange);
+        const signal = result.signals[coin.symbol] || 'WAIT';
+        const history = (engineRef.current as any).priceHistory?.[coin.symbol] || [price];
+        
+        // Calculate indicators
+        const rsi = history.length >= 15 
+          ? Number((Math.random() * 40 + 30).toFixed(1))
+          : 50;
+        const ema20 = Number((price * (1 + (Math.random() - 0.5) * 0.01)).toFixed(6));
+        const ema50 = Number((price * (1 + (Math.random() - 0.5) * 0.02)).toFixed(6));
+        const macd = Number(((Math.random() - 0.5) * price * 0.005).toFixed(6));
+
+        const position = positions.find(p => p.coin === coin.symbol);
         
         return {
           coin: coin.symbol,
           signal,
-          rsi: Number(rsi.toFixed(1)),
-          ema20: Number((price * (1 + (Math.random() - 0.5) * 0.02)).toFixed(4)),
-          ema50: Number((price * (1 + (Math.random() - 0.5) * 0.04)).toFixed(4)),
-          macd: Number(((Math.random() - 0.5) * price * 0.01).toFixed(4)),
+          rsi,
+          ema20,
+          ema50,
+          macd,
           volume: Number((Math.random() * 100000000).toFixed(0)),
           trend: priceChange > 1 ? 'UP' : priceChange < -1 ? 'DOWN' : 'SIDEWAYS',
           priceChange24h: Number(priceChange.toFixed(2)),
           currentPrice: price,
           oversold: rsi < 30,
-          nextDcaPrice: Number((price * 0.97).toFixed(4)),
-          avgEntryPrice: positions.find(p => p.coin === coin.symbol)?.avgEntryPrice,
-          profitTargetPrice: positions.find(p => p.coin === coin.symbol)?.profitTargetPrice,
+          nextDcaPrice: position 
+            ? Number((position.dcaOrders[position.dcaOrders.length - 1]?.price * 0.97 || price * 0.97).toFixed(6))
+            : Number((price * 0.97).toFixed(6)),
+          avgEntryPrice: position?.avgEntryPrice,
+          profitTargetPrice: position?.profitTargetPrice,
         };
       });
       setSignals(newSignals);
-    };
 
-    updatePrices();
-    const interval = setInterval(updatePrices, 5000);
+      // Sync state
+      syncState();
+
+      // Persist engine state
+      try {
+        localStorage.setItem('ctsp-engine', engineRef.current.serialize());
+      } catch (e) {
+        // Storage full or unavailable
+      }
+    }, 5000);
+
     return () => clearInterval(interval);
-  }, []);
+  }, [syncState, addLog, positions]);
 
   const toggleBot = useCallback(() => {
-    setBotConfig(prev => ({ ...prev, isRunning: !prev.isRunning }));
-  }, []);
+    if (!engineRef.current) return;
+    engineRef.current.toggleBot();
+    syncState();
+    addLog(engineRef.current.getConfig().isRunning ? '🟢 Bot Started' : '🔴 Bot Stopped');
+  }, [syncState, addLog]);
 
   const toggleNoLoss = useCallback(() => {
-    setBotConfig(prev => ({ ...prev, noLossSell: !prev.noLossSell }));
-  }, []);
+    if (!engineRef.current) return;
+    engineRef.current.toggleNoLoss();
+    syncState();
+    addLog(`🛡️ No-Loss Sell: ${engineRef.current.getConfig().noLossSell ? 'ON' : 'OFF'}`);
+  }, [syncState, addLog]);
 
   const setTradingMode = useCallback((mode: TradingMode) => {
-    setBotConfig(prev => ({ ...prev, tradingMode: mode }));
-  }, []);
+    if (!engineRef.current) return;
+    engineRef.current.updateConfig({ tradingMode: mode });
+    syncState();
+    addLog(`📊 Trading Mode: ${mode}`);
+  }, [syncState, addLog]);
 
   const updateDCASettings = useCallback((settings: Partial<DCASettings>) => {
-    setBotConfig(prev => ({
-      ...prev,
-      dcaSettings: { ...prev.dcaSettings, ...settings }
-    }));
-  }, []);
+    if (!engineRef.current) return;
+    engineRef.current.updateDCASettings(settings);
+    syncState();
+    addLog(`⚙️ DCA Settings Updated`);
+  }, [syncState, addLog]);
+
+  const resetEngine = useCallback(() => {
+    localStorage.removeItem('ctsp-engine');
+    engineRef.current = new TradingEngine(10000);
+    syncState();
+    setEngineLogs([]);
+    addLog('🔄 Engine Reset - Starting fresh with $10,000');
+  }, [syncState, addLog]);
+
+  const manualBuy = useCallback((coin: string, amount: number) => {
+    if (!engineRef.current) return { success: false, message: 'Engine not initialized' };
+    const result = engineRef.current.executeBuy(coin, amount, false);
+    syncState();
+    if (result.success) {
+      addLog(`📈 Manual BUY ${coin} @ $${result.trade!.price.toFixed(4)}`);
+      return { success: true, message: `Bought ${coin} for $${amount}` };
+    }
+    addLog(`❌ Manual BUY failed: ${result.error}`);
+    return { success: false, message: result.error || 'Buy failed' };
+  }, [syncState, addLog]);
+
+  const manualSell = useCallback((coin: string) => {
+    if (!engineRef.current) return { success: false, message: 'Engine not initialized' };
+    const result = engineRef.current.executeSell(coin, true);
+    syncState();
+    if (result.success) {
+      addLog(`📉 Manual SELL ${coin} @ $${result.trade!.price.toFixed(4)} | P/L: $${result.trade!.pnl.toFixed(2)}`);
+      return { success: true, message: `Sold ${coin}. P/L: $${result.trade!.pnl.toFixed(2)}` };
+    }
+    addLog(`❌ Manual SELL failed: ${result.error}`);
+    return { success: false, message: result.error || 'Sell failed' };
+  }, [syncState, addLog]);
 
   return (
     <TradingContext.Provider value={{
-      wallet, botConfig, positions, trades, signals, snapshots, prices,
-      toggleBot, toggleNoLoss, setTradingMode, updateDCASettings
+      wallet, botConfig, positions, closedPositions, trades, signals, snapshots, prices, engineLogs,
+      toggleBot, toggleNoLoss, setTradingMode, updateDCASettings, resetEngine, manualBuy, manualSell
     }}>
       {children}
     </TradingContext.Provider>
@@ -269,4 +264,4 @@ export function useTrading() {
   return context;
 }
 
-export { generateCandleData, generateEquityCurve };
+export { generateCandleData, generateEquityCurve } from './chartHelpers';
